@@ -1,0 +1,126 @@
+#!/bin/bash
+# chkconfig: 345 96 30
+# description: X Virtual Frame Buffer Control Script for starting up Xvfb in the background
+#
+# X Virtual Frame Buffer Control Script
+# Xvfb Script for RezEko
+#
+
+export XVFB_USER=<%= node.xvfb.user %>
+
+# Define which screen Xvfb is connected to
+XVFB_DISPLAY=${XVFB_DISPLAY:-":99"}
+
+# Define the user under which Xvfb will run, or use 'RUNASIS' to run as the current user
+XVFB_USER=${XVFB_USER:-"root"}
+
+XVFB_PIDFILE=${XVFB_PIDFILE:-"/var/run/xvfb/xvfb.pid"}
+
+XVFB_CONSOLE=${XVFB_CONSOLE:-"/dev/null"}
+
+##
+## End of configurable options
+##
+
+if [ "$XVFB_USER" = "RUNASIS" -o "$USER" = "$XVFB_USER" ]; then
+  SUBIT=""
+else
+  SUBIT="su - $XVFB_USER -c "
+fi
+
+function xvfb_command {
+  START_CMD="Xvfb $XVFB_DISPLAY -ac"
+
+  if [ ! -z "$SUBIT" ]; then
+    $SUBIT "( $START_CMD > $XVFB_CONSOLE 2>&1 )" &
+    $SUBIT "( echo $! > $XVFB_PIDFILE )" 
+  else
+    $START_CMD > $XVFB_CONSOLE 2>&1 &
+    echo $! > $XVFB_PIDFILE
+  fi
+  
+  return $?
+}
+
+function status {
+  RUNNING_PID=0
+  if [ -f $XVFB_PIDFILE ]; then
+    TMP_PID=`cat $XVFB_PIDFILE`
+    TMP_PID_CHECK=`ps -p $TMP_PID -o pid=`
+    if [ "$TMP_PID_CHECK" != "" ]; then
+      RUNNING_PID=$TMP_PID
+      return 0  # running
+    else
+      return 1  # stopped, but pid file exists 
+    fi
+  fi
+  return 3 # stopped
+}
+
+function stop {
+  echo "stopping Xvfb..."
+
+  status
+  if [ $? -ne 0 ]; then 
+    echo "Xvfb is not running.  aborting."
+  else
+    CHILD_PID=`ps --ppid $RUNNING_PID -o pid=`
+    if [ -n "$CHILD_PID" ]; then
+      GRANDCHILD_PID=`ps --ppid $CHILD_PID -o pid=`
+    fi
+    ALL_PIDS="$RUNNING_PID $CHILD_PID $GRANDCHILD_PID"
+    echo "(pids $ALL_PIDS)"
+    kill $ALL_PIDS && rm -f $XVFB_PIDFILE 2>/dev/null
+    sleep 3
+    kill -9 $ALL_PIDS 2>/dev/null && rm -f $XVFB_PIDFILE
+  fi
+  	
+  rm -f $XVFB_PIDFILE
+}
+
+function start {
+  echo "starting Xvfb..."
+
+  status
+  if [ $? -eq 0 ]; then
+    echo "Xvfb (pid $RUNNING_PID) is already running. aborting."
+    exit 100
+  fi
+
+  xvfb_command "start"
+  sleep 3
+  status
+  if [ $? -ne 0 ]; then
+    echo "Xvfb failed to start. please check the logs."
+    exit 1
+  fi
+}
+
+#----------------------------------------------------------------------------------------------------------------------------------------------
+
+case "$1" in
+start)
+    start
+    ;;
+stop)
+    stop
+    ;;
+restart)
+    $0 stop && sleep 1 && $0 start
+    ;;		
+status)
+    status
+    RET=$?
+    if [ $RET -eq 0 ]; then
+      echo "Xvfb (pid $RUNNING_PID) is running..."
+    elif [ $RET -eq 1 ]; then
+      echo "Xvfb is dead but pidfile ($XVFB_PIDFILE) exists..."
+    else
+      echo "Xvfb is stopped."
+    fi
+    exit $RET
+    ;;
+*)
+    echo "usage: $0 (start|stop|restart|status|help)"
+esac
+

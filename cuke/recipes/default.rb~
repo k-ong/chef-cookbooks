@@ -1,0 +1,40 @@
+
+%w[xorg-x11-fonts-misc xorg-x11-fonts-100dpi xorg-x11-fonts-75dpi xorg-x11-fonts-base xorg-x11-fonts-Type1 xorg-x11-server-Xvfb].each do |packages|
+  package packages
+end
+
+package "firefox" do
+	version "3.6.14-4.el5_6"
+	action :install
+end
+
+if node.firefox.install_java_plugin
+  include_recipe "java"
+  include_recipe "jboss"
+
+  link "/usr/lib/mozilla/plugins/libnpjp2.so" do
+    to "#{node.java.java_home}/jre/lib/#{node.java.lib.arch}/libnpjp2.so"
+  end
+
+  link "/usr/lib64/mozilla/plugins/libnpjp2.so" do
+    to "#{node.java.java_home}/jre/lib/#{node.java.lib.arch}/libnpjp2.so"
+  end
+end
+
+directory node.xvfb.pid.dir do
+  owner node.xvfb.user
+  group node.xvfb.group
+  mode "0755"
+end
+
+template "/etc/init.d/Xvfb" do
+  source  "xvfb.erb"
+  owner   "root"
+  group   "root"
+  mode    0755
+end
+
+service "Xvfb" do
+  action :restart
+end
+
